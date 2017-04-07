@@ -136,10 +136,7 @@ def traceback(score_matrix, start_pos, seq1, seq2):
     return ''.join(reversed(aligned_seq1)), ''.join(reversed(aligned_seq2))
 
 
-def next_move(xpyp, xpy, xyp):
-    diag = xpyp
-    up   = xpy
-    left = xyp
+def next_move(diag, up, left):
     if diag >= up and diag >= left:     # Tie goes to the DIAG move.
         return 1 if diag != 0 else 0    # 1 signals a DIAG move. 0 signals the end.
     elif up > diag and up >= left:      # Tie goes to UP move.
