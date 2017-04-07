@@ -1,29 +1,14 @@
-#!/Users/Rad/anaconda/bin/python
+#!/bin/python
 # (c) 2013 Ryan Boehning
+# (c) 2017 Daniel McSkimming
 
 
 '''A Python implementation of the Smith-Waterman algorithm for local alignment
-of nucleotide sequences.
+of nucleotide sequences weighted by base quality (of seq2).
 '''
 
 
-import argparse
-import os
-import re
-import sys
-import unittest
-
-
-# These scores are taken from Wikipedia.
-# en.wikipedia.org/wiki/Smith%E2%80%93Waterman_algorithm
-match    = 2
-mismatch = -1
-gap      = -1
-seq1     = None
-seq2     = None
-
-
-def main():
+def do_one(args):
     try:
         parse_cmd_line()
     except ValueError as err:
@@ -32,15 +17,16 @@ def main():
 
     # The scoring matrix contains an extra row and column for the gap (-), hence
     # the +1 here.
-    rows = len(seq1) + 1
-    cols = len(seq2) + 1
+    rows = len(args.seq1) + 1
+    cols = len(args.seq2) + 1
 
     # Initialize the scoring matrix.
-    score_matrix, start_pos = create_score_matrix(rows, cols)
+    score_matrix, start_pos = create_score_matrix(rows, cols, args.match,\
+            args.mismatch, args.gap)
 
     # Traceback. Find the optimal path through the scoring matrix. This path
     # corresponds to the optimal local sequence alignment.
-    seq1_aligned, seq2_aligned = traceback(score_matrix, start_pos)
+    seq1_aligned, seq2_aligned = traceback(score_matrix, start_pos, args.seq1, args.seq2)
     assert len(seq1_aligned) == len(seq2_aligned), 'aligned strings are not the same size'
 
     # Pretty print the results. The printing follows the format of BLAST results
@@ -60,21 +46,8 @@ def main():
         print()
 
 
-def parse_cmd_line():
-    '''Parse the command line arguments.
-
-    Create a help menu, take input from the command line, and validate the
-    input by ensuring it does not contain invalid characters (i.e. characters
-    that aren't the bases A, C, G, or T).
-    '''
-
-
-
-    seq1 = "ATAGACGACATACAGACAGCATACAGACAGCATACAGA"
-    seq2 = "TTTAGCATGCGCATATCAGCAATACAGACAGATACG"
-
-
-def create_score_matrix(rows, cols):
+def create_score_matrix(seq1, seq2, match=2, mismatch=-1, gap=-1):
+    # pass in seq1 and seq2, not rows,cols
     '''Create a matrix of scores representing trial alignments of the two sequences.
 
     Sequence alignment can be treated as a graph search problem. This function
@@ -82,18 +55,19 @@ def create_score_matrix(rows, cols):
     of different base pairs. The path with the highest cummulative score is the
     best alignment.
     '''
-    score_matrix = [[0 for col in range(cols)] for row in range(rows)]
-
+    clen, rlen = len(seq1)+1, len(seq2)+1
+    score_matrix = [[0 for col in range(clen)] for row in range(rlen)]
     # Fill the scoring matrix.
-    max_score = 0
+    max_score, score = 0, 0
+    seq2_qual = 1.0
     max_pos   = None    # The row and columbn of the highest score in matrix.
-    for i in range(1, rows):
-        for j in range(1, cols):
-            score = calc_score(score_matrix, i, j)
+    for i in range(1, rlen):
+        for j in range(1, clen):
+            xprev_y, x_yprev, xprev_yprev = score_matrix[i-1][j], score_matrix[i][j-1], score_matrix[i-1][j-1]
+            score = calc_score(xprev_y, x_yprev, xprev_yprev, seq1[i-1], seq2[j-1], seq2_qual, match, mismatch, gap) 
             if score > max_score:
                 max_score = score
                 max_pos   = (i, j)
-
             score_matrix[i][j] = score
 
     assert max_pos is not None, 'the x, y position with the highest score was not found'
@@ -101,21 +75,22 @@ def create_score_matrix(rows, cols):
     return score_matrix, max_pos
 
 
-def calc_score(matrix, x, y):
+def calc_score(xpy, xyp, xpyp, a, b, b_qual, match, mismatch, gap):
     '''Calculate score for a given x, y position in the scoring matrix.
 
     The score is based on the up, left, and upper-left neighbors.
     '''
-    similarity = match if seq1[x - 1] == seq2[y - 1] else mismatch
+    #need to scale match/mismatch by base quality
+    similarity = b_qual*match if a == b else b_qual*mismatch
 
-    diag_score = matrix[x - 1][y - 1] + similarity
-    up_score   = matrix[x - 1][y] + gap
-    left_score = matrix[x][y - 1] + gap
+    diag_score = xpyp + similarity
+    up_score   = xpy + gap
+    left_score = xyp + gap
 
     return max(0, diag_score, up_score, left_score)
 
 
-def traceback(score_matrix, start_pos):
+def traceback(score_matrix, start_pos, seq1, seq2):
     '''Find the optimal path through the matrix.
 
     This function traces a path from the bottom-right to the top-left corner of
@@ -134,7 +109,9 @@ def traceback(score_matrix, start_pos):
     aligned_seq1 = []
     aligned_seq2 = []
     x, y         = start_pos
-    move         = next_move(score_matrix, x, y)
+    xpyp, xpy, xyp = score_matrix[x-1][y-1], score_matrix[x-1][y],\
+            score_matrix[x][y-1]
+    move = next_move(xpyp, xpy, xyp)
     while move != END:
         if move == DIAG:
             aligned_seq1.append(seq1[x - 1])
@@ -149,19 +126,20 @@ def traceback(score_matrix, start_pos):
             aligned_seq1.append('-')
             aligned_seq2.append(seq2[y - 1])
             y -= 1
-
-        move = next_move(score_matrix, x, y)
+        xpyp, xpy, xyp = score_matrix[x-1][y-1], score_matrix[x-1][y],\
+                score_matrix[x][y-1]
+        move = next_move(xpyp, xpy, xyp)
 
     aligned_seq1.append(seq1[x - 1])
-    aligned_seq2.append(seq1[y - 1])
+    aligned_seq2.append(seq2[y - 1])
 
     return ''.join(reversed(aligned_seq1)), ''.join(reversed(aligned_seq2))
 
 
-def next_move(score_matrix, x, y):
-    diag = score_matrix[x - 1][y - 1]
-    up   = score_matrix[x - 1][y]
-    left = score_matrix[x][y - 1]
+def next_move(xpyp, xpy, xyp):
+    diag = xpyp
+    up   = xpy
+    left = xyp
     if diag >= up and diag >= left:     # Tie goes to the DIAG move.
         return 1 if diag != 0 else 0    # 1 signals a DIAG move. 0 signals the end.
     elif up > diag and up >= left:      # Tie goes to UP move.
@@ -171,6 +149,7 @@ def next_move(score_matrix, x, y):
     else:
         # Execution should not reach here.
         raise ValueError('invalid move during traceback')
+    return
 
 
 def alignment_string(aligned_seq1, aligned_seq2):
@@ -215,35 +194,11 @@ def print_matrix(matrix):
     0   1   4   4   7   6
     '''
     for row in matrix:
-        for col in row:
-            print('{0:>4}'.format(col))
-        print()
-
-
-class ScoreMatrixTest(unittest.TestCase):
-    '''Compare the matrix produced by create_score_matrix() with a known matrix.'''
-    def test_matrix(self):
-        # From Wikipedia (en.wikipedia.org/wiki/Smith%E2%80%93Waterman_algorithm)
-        #                -   A   C   A   C   A   C   T   A
-        known_matrix = [[0,  0,  0,  0,  0,  0,  0,  0,  0],  # -
-                        [0,  2,  1,  2,  1,  2,  1,  0,  2],  # A
-                        [0,  1,  1,  1,  1,  1,  1,  0,  1],  # G
-                        [0,  0,  3,  2,  3,  2,  3,  2,  1],  # C
-                        [0,  2,  2,  5,  4,  5,  4,  3,  4],  # A
-                        [0,  1,  4,  4,  7,  6,  7,  6,  5],  # C
-                        [0,  2,  3,  6,  6,  9,  8,  7,  8],  # A
-                        [0,  1,  4,  5,  8,  8, 11, 10,  9],  # C
-                        [0,  2,  3,  6,  7, 10, 10, 10, 12]]  # A
-
-        global seq1, seq2
-        seq1 = 'AGCACACA'
-        seq2 = 'ACACACTA'
-        rows = len(seq1) + 1
-        cols = len(seq2) + 1
-
-        matrix_to_test, max_pos = create_score_matrix(rows, cols)
-        self.assertEqual(known_matrix, matrix_to_test)
-
+        print('\t'.join('{0:>6}'.format(x)for x in row))
+        #for col in row:
+            #print('{0:>6}'.format(col))
+    return
 
 if __name__ == '__main__':
-    sys.exit(main())
+    import argparse
+    #use argparse to take sequences, validate format, score and display alignment
