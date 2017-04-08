@@ -9,19 +9,8 @@ of nucleotide sequences weighted by base quality (of seq2).
 
 
 def do_one(args):
-    try:
-        parse_cmd_line()
-    except ValueError as err:
-        print('error:', err)
-        return
-
-    # The scoring matrix contains an extra row and column for the gap (-), hence
-    # the +1 here.
-    rows = len(args.seq1) + 1
-    cols = len(args.seq2) + 1
-
-    # Initialize the scoring matrix.
-    score_matrix, start_pos = create_score_matrix(rows, cols, args.match,\
+    # Initialize and fill the scoring matrix.
+    score_matrix, start_pos = create_score_matrix(args.seq1, args.seq2, args.match,\
             args.mismatch, args.gap)
 
     # Traceback. Find the optimal path through the scoring matrix. This path
@@ -33,17 +22,18 @@ def do_one(args):
     # as closely as possible.
     alignment_str, idents, gaps, mismatches = alignment_string(seq1_aligned, seq2_aligned)
     alength = len(seq1_aligned)
-    print()
+    print('\n')
     print(' Identities = {0}/{1} ({2:.1%}), Gaps = {3}/{4} ({5:.1%})'.format(idents,
           alength, idents / alength, gaps, alength, gaps / alength))
-    print()
+    print('\n')
     for i in range(0, alength, 60):
         seq1_slice = seq1_aligned[i:i+60]
         print('Query  {0:<4}  {1}  {2:<4}'.format(i + 1, seq1_slice, i + len(seq1_slice)))
         print('             {0}'.format(alignment_str[i:i+60]))
         seq2_slice = seq2_aligned[i:i+60]
         print('Sbjct  {0:<4}  {1}  {2:<4}'.format(i + 1, seq2_slice, i + len(seq2_slice)))
-        print()
+        print('\n')
+    return
 
 
 def create_score_matrix(seq1, seq2, match=2, mismatch=-1, gap=-1):
