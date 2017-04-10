@@ -19,7 +19,7 @@ class ScoreMatrixTest(unittest.TestCase):
         seq1 = 'AGCACACA'
         seq2 = 'ACACACTA'
 
-        matrix_to_test, max_pos = wSW.create_score_matrix(seq1, seq2)
+        matrix_to_test, max_pos = wSW.create_score_matrix(seq1, seq2, 2, -1, -1)
         wSW.print_matrix(matrix_to_test)
         seq1_aligned, seq2_aligned = wSW.traceback(matrix_to_test, max_pos, seq1, seq2)
         self.assertEqual(len(seq1_aligned), len(seq2_aligned))
@@ -38,7 +38,6 @@ class ScoreMatrixTest(unittest.TestCase):
             print('\n')
             self.assertEqual(known_matrix, matrix_to_test)
         return
-
 
 if __name__ == '__main__':
     unittest.main()

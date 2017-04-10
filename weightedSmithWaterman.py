@@ -9,13 +9,17 @@ of nucleotide sequences weighted by base quality (of seq2).
 
 
 def do_one(args):
-    # Initialize and fill the scoring matrix.
-    score_matrix, start_pos = create_score_matrix(args.seq1, args.seq2, args.match,\
-            args.mismatch, args.gap)
+    align_sequences(args.seq1, args.seq2, args.match, args.mismatch, args.gap)
+    return 
 
+def align_sequences(seq1, seq2, match=3, mismatch=-2, gap=-1):
+    # Initialize and fill the scoring matrix.
+    score_matrix, start_pos = create_score_matrix(seq1, seq2, match,\
+            mismatch, gap)
+    #print_matrix(score_matrix)
     # Traceback. Find the optimal path through the scoring matrix. This path
     # corresponds to the optimal local sequence alignment.
-    seq1_aligned, seq2_aligned = traceback(score_matrix, start_pos, args.seq1, args.seq2)
+    seq1_aligned, seq2_aligned = traceback(score_matrix, start_pos, seq1, seq2)
     assert len(seq1_aligned) == len(seq2_aligned), 'aligned strings are not the same size'
 
     # Pretty print the results. The printing follows the format of BLAST results
@@ -23,8 +27,9 @@ def do_one(args):
     alignment_str, idents, gaps, mismatches = alignment_string(seq1_aligned, seq2_aligned)
     alength = len(seq1_aligned)
     print('\n')
+    print(' Alignment score = {0:.2f}'.format(score_matrix[start_pos[0]][start_pos[1]]))
     print(' Identities = {0}/{1} ({2:.1%}), Gaps = {3}/{4} ({5:.1%})'.format(idents,
-          alength, idents / alength, gaps, alength, gaps / alength))
+          alength, float(idents) / alength, gaps, alength, float(gaps) / alength))
     print('\n')
     for i in range(0, alength, 60):
         seq1_slice = seq1_aligned[i:i+60]
@@ -35,8 +40,7 @@ def do_one(args):
         print('\n')
     return
 
-
-def create_score_matrix(seq1, seq2, match=2, mismatch=-1, gap=-1):
+def create_score_matrix(seq1, seq2, match, mismatch, gap):
     # pass in seq1 and seq2, not rows,cols
     '''Create a matrix of scores representing trial alignments of the two sequences.
 
@@ -54,14 +58,17 @@ def create_score_matrix(seq1, seq2, match=2, mismatch=-1, gap=-1):
     for i in range(1, rlen):
         for j in range(1, clen):
             xprev_y, x_yprev, xprev_yprev = score_matrix[i-1][j], score_matrix[i][j-1], score_matrix[i-1][j-1]
-            score = calc_score(xprev_y, x_yprev, xprev_yprev, seq1[i-1], seq2[j-1], seq2_qual, match, mismatch, gap) 
+            score = calc_score(xprev_y, x_yprev, xprev_yprev, seq1.seq[i-1], seq2.seq[j-1], seq2.letter_annotations['phred_quality'][j-1], match, mismatch, gap) 
+            #score = calc_score(xprev_y, x_yprev, xprev_yprev, seq1.seq[i-1],
+                               #seq2.seq[j-1], 40, match, mismatch, gap) 
+            #print(i,j,score, max_score, seq1.seq[i-1], seq2.seq[j-1])
             if score > max_score:
                 max_score = score
                 max_pos   = (i, j)
             score_matrix[i][j] = score
 
     assert max_pos is not None, 'the x, y position with the highest score was not found'
-
+    #print(max_pos)
     return score_matrix, max_pos
 
 
@@ -70,13 +77,14 @@ def calc_score(xpy, xyp, xpyp, a, b, b_qual, match, mismatch, gap):
 
     The score is based on the up, left, and upper-left neighbors.
     '''
+    b_prob = 1 - pow(10, b_qual/-10.0)
     #need to scale match/mismatch by base quality
-    similarity = b_qual*match if a == b else b_qual*mismatch
-
+    similarity = b_prob*match if a == b else b_prob*mismatch
+    #print(b_qual, b_prob, match, b_prob*match, mismatch, b_prob*mismatch)
     diag_score = xpyp + similarity
-    up_score   = xpy + gap
-    left_score = xyp + gap
-
+    up_score   = xyp + gap
+    left_score = xpy + gap
+    #print('     ', diag_score, up_score, left_score, b_qual, b_prob, a, b, similarity)
     return max(0, diag_score, up_score, left_score)
 
 
@@ -102,6 +110,7 @@ def traceback(score_matrix, start_pos, seq1, seq2):
     xpyp, xpy, xyp = score_matrix[x-1][y-1], score_matrix[x-1][y],\
             score_matrix[x][y-1]
     move = next_move(xpyp, xpy, xyp)
+    #print(x,y,xpyp, xpy, xyp, ['END','DIAG','UP','LEFT'][move], score_matrix[x][y])
     while move != END:
         if move == DIAG:
             aligned_seq1.append(seq1[x - 1])
@@ -119,6 +128,7 @@ def traceback(score_matrix, start_pos, seq1, seq2):
         xpyp, xpy, xyp = score_matrix[x-1][y-1], score_matrix[x-1][y],\
                 score_matrix[x][y-1]
         move = next_move(xpyp, xpy, xyp)
+        #print(x,y,xpyp, xpy, xyp, ['END','DIAG','UP','LEFT'][move], score_matrix[x][y])
 
     aligned_seq1.append(seq1[x - 1])
     aligned_seq2.append(seq2[y - 1])
@@ -181,7 +191,7 @@ def print_matrix(matrix):
     0   1   4   4   7   6
     '''
     for row in matrix:
-        print('\t'.join('{0:>6}'.format(x)for x in row))
+        print('\t'.join(['{0:.1f}'.format(x) for x in row]))
         #for col in row:
             #print('{0:>6}'.format(col))
     return
